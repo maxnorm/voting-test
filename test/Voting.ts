@@ -153,6 +153,15 @@ describe("Voting", function () {
     })
   })
 
+  // TODO: Set Vote
+  describe("Set Vote", function () {})
+
+  // TODO: Tally Votes
+  describe("Tally Votes", function () {})
+
+  // TODO: Test all the workflow status transitions
+  describe("Workflow Status", function () {})
+
   describe("Only voters", function () {
     let voting: Voting;
     let owner: any;
