@@ -1,0 +1,244 @@
+import {
+  time,
+  loadFixture,
+} from "@nomicfoundation/hardhat-toolbox/network-helpers";
+import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
+import { expect } from "chai";
+import hre from "hardhat";
+const { ethers } = require("hardhat");
+import { BN } from "ethereumjs-util";
+import { Voting } from "../typechain-types";
+
+describe("Voting", function () {
+  async function deployVotingFixture() {
+    const [owner, account1, account2, account3] = await hre.ethers.getSigners();
+
+    const Voting = await hre.ethers.getContractFactory("Voting");
+    // First address is normally the owner but we make it explicit for the test
+    const voting = await Voting.connect(owner).deploy();
+    return { voting, owner, account1, account2, account3 };
+  }
+
+  async function deployVotingFixtureWith1Voter() {
+    const {voting, owner, account1, account2, account3  } = await loadFixture(
+      deployVotingFixture
+    );
+
+    await voting.addVoter(account1.address);
+
+    return {voting, owner, voter1: account1, account2, account3 };
+  }
+
+  describe("Deployment", function () {
+    it("Should set the right owner", async function () {
+      const { voting, owner } = await loadFixture(deployVotingFixture);
+
+      expect(await voting.owner()).to.equal(owner.address);
+    });
+
+    it("Should be initialized with default states", async function () {
+      const { voting } = await loadFixture(deployVotingFixture);
+
+      expect(await voting.winningProposalID()).to.equal(0);
+      expect(await voting.workflowStatus()).to.equal(0);
+
+      // Check if proposalsArray is empty by checking its storage slot #2
+      const storage = await ethers.provider.getStorage(
+        voting.target,
+        2
+      );
+
+      expect(storage).to.be.equal(new BN(0));
+
+      // Check if voters mapping is empty by checking its storage slot #3
+      const votersStorage = await ethers.provider.getStorage(
+        voting.target,
+        3
+      );
+      expect(votersStorage).to.be.equal(new BN(0));
+    });
+  });
+
+  describe("Add Voter", function () {
+    it("Should add voter", async function () {
+      const { voting, account1 } = await loadFixture(deployVotingFixture);
+
+      const voterAddress = account1.address;
+      await voting.addVoter(voterAddress);
+      const voter = await voting.connect(account1).getVoter(voterAddress)
+
+      expect(voter.isRegistered).to.be.true;
+    });
+
+    it("Should revert when add twice", async function () {
+      const { voting, voter1 } = await loadFixture(deployVotingFixtureWith1Voter);
+      await expect(
+        voting.addVoter(voter1.address)
+      ).to.be.revertedWith('Already registered');
+    })
+
+    it("Should revert when add voter in wrong state (Status != RegisteringVoters)", async function () {
+      const { voting, account1 } = await loadFixture(deployVotingFixture);
+      await voting.startProposalsRegistering();
+      await expect(
+        voting.addVoter(account1.address)
+      ).to.be.revertedWith('Voters registration is not open yet');
+    })
+
+    it("Should emit event: VoterRegistered", async function () {
+      const { voting, account1 } = await loadFixture(deployVotingFixture);
+      await expect(
+        voting.addVoter(account1.address)
+      ).to.emit(voting, "VoterRegistered").withArgs(account1.address);
+    })
+  })
+
+  describe("Add Proposals", function () {
+    let voting: Voting;
+    let voter1: any;
+
+    before(async function () {
+      const { voting: _voting, voter1: _voter1 } = await loadFixture(deployVotingFixtureWith1Voter);
+      voting = _voting;
+      voter1 = _voter1;
+
+      await voting.startProposalsRegistering();
+    })
+
+    it("Genesis proposal should be added at index 0", async function () {
+      const proposal = await voting.connect(voter1).getOneProposal(0);
+      expect(proposal.description).to.equal("GENESIS");
+      expect(proposal.voteCount).to.equal(0);
+    })
+
+    it("Should add proposal", async function () {
+      // Get the length of the proposals array before adding a new proposal
+      const proposalsLength = await ethers.provider.getStorage(
+        voting.target,
+        2
+      );
+      const currentIndex = parseInt(proposalsLength) - 1;
+
+      await voting.connect(voter1).addProposal("Proposal 1");
+      const proposal = await voting.connect(voter1).getOneProposal(currentIndex + 1);
+      expect(proposal.description).to.equal("Proposal 1");
+      expect(proposal.voteCount).to.equal(0);
+    })
+
+    it("Should revert when add proposal with empty description", async function () {
+      await expect(
+        voting.connect(voter1).addProposal("")
+      ).to.be.revertedWith("Vous ne pouvez pas ne rien proposer");
+    })
+
+    it("Should emit event: ProposalRegistered", async function() {
+      // Get the length of the proposals array before adding a new proposal
+      const proposalsLength = await ethers.provider.getStorage(
+        voting.target,
+        2
+      );
+      const length = parseInt(proposalsLength);
+
+      await expect(
+        voting.connect(voter1).addProposal("Proposal 1")
+      ).to.emit(voting, "ProposalRegistered").withArgs(length + 1);
+    })
+
+    it("Should revert when add proposal in wrong state (Status != ProposalsRegistrationStarted)", async function () {
+      await voting.endProposalsRegistering();
+
+      await expect(
+        voting.connect(voter1).addProposal("Proposal 1")
+      ).to.be.revertedWith("Proposals are not allowed yet");
+    })
+  })
+
+  describe("Only voters", function () {
+    let voting: Voting;
+    let owner: any;
+    let voter1: any;
+
+    before(async function () {
+      const { voting: _voting, owner: _owner, voter1: _voter1 } = await loadFixture(deployVotingFixtureWith1Voter);
+      voting = _voting;
+      owner = _owner;
+      voter1 = _voter1;
+
+      await voting.startProposalsRegistering();
+    })
+
+    it("Get voter should revert if not allowed voter", async function () {
+      await expect(
+        voting.connect(owner).getVoter(voter1.address)
+      ).to.be.revertedWith("You're not a voter");
+    })
+
+    it("Get proposal should revert if not allowed voter", async function () {
+      await expect(
+        voting.connect(owner).getOneProposal(0)
+      ).to.be.revertedWith("You're not a voter");
+    })
+
+    it("Add proposal should revert if not allowed voter", async function () {
+      await expect(
+        voting.connect(owner).addProposal("Proposal 1")
+      ).to.be.revertedWith("You're not a voter");
+    })
+
+    it("Set vote should revert if not allowed voter", async function () {
+      await expect(
+        voting.connect(owner).setVote(0)
+      ).to.be.revertedWith("You're not a voter");
+    })
+  });
+
+  describe("Only Owner", function () {
+    it("Add voter should revert if not owner", async function () {
+      const { voting, voter1 } = await loadFixture(deployVotingFixtureWith1Voter);
+
+      await expect(
+        voting.connect(voter1).addVoter(voter1.address)
+      ).to.be.revertedWithCustomError(voting, "OwnableUnauthorizedAccount");
+    });
+
+    it("Start Proposals Registration should revert if not owner", async function () {
+      const { voting, voter1 } = await loadFixture(deployVotingFixtureWith1Voter);
+
+      await expect(
+        voting.connect(voter1).startProposalsRegistering()
+      ).to.be.revertedWithCustomError(voting, "OwnableUnauthorizedAccount");
+    });
+
+    it("End Proposals Registration should revert if not owner", async function () {
+      const { voting, voter1 } = await loadFixture(deployVotingFixtureWith1Voter);
+
+      await expect(
+        voting.connect(voter1).endProposalsRegistering()
+      ).to.be.revertedWithCustomError(voting, "OwnableUnauthorizedAccount");
+    });
+
+    it("Start Voting should revert if not owner", async function () {
+      const { voting, voter1 } = await loadFixture(deployVotingFixtureWith1Voter);
+
+      await expect(
+        voting.connect(voter1).startVotingSession()
+      ).to.be.revertedWithCustomError(voting, "OwnableUnauthorizedAccount");
+    });
+
+    it("End Voting should revert if not owner", async function () {
+      const { voting, voter1 } = await loadFixture(deployVotingFixtureWith1Voter);
+
+      await expect(
+        voting.connect(voter1).endVotingSession()
+      ).to.be.revertedWithCustomError(voting, "OwnableUnauthorizedAccount");
+    });
+
+    it("Tally Votes should revert if not owner", async function () {
+      const { voting, voter1 } = await loadFixture(deployVotingFixtureWith1Voter);
+
+      await expect(
+        voting.connect(voter1).tallyVotes()
+      ).to.be.revertedWithCustomError(voting, "OwnableUnauthorizedAccount");
+    });
+  });
+});
