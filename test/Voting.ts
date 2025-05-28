@@ -29,6 +29,21 @@ describe("Voting", function () {
     return {voting, owner, voter1: account1, account2, account3 };
   }
 
+  async function deployVotingFixtureReadyToVote() {
+    const {voting, owner, voter1, account2, account3  } = await loadFixture(
+      deployVotingFixtureWith1Voter
+    );
+    await voting.addVoter(account2.address);
+    await voting.addVoter(account3.address);
+    await voting.startProposalsRegistering();
+    await voting.connect(voter1).addProposal("Proposal 1");
+    await voting.connect(account2).addProposal("Proposal 2");
+    await voting.endProposalsRegistering();
+    await voting.startVotingSession();
+
+    return {voting, owner, voter1, account2, account3 };
+  }
+
   describe("Deployment", function () {
     it("Should set the right owner", async function () {
       const { voting, owner } = await loadFixture(deployVotingFixture);
@@ -97,7 +112,7 @@ describe("Voting", function () {
     let voting: Voting;
     let voter1: any;
 
-    before(async function () {
+    beforeEach(async function () {
       const { voting: _voting, voter1: _voter1 } = await loadFixture(deployVotingFixtureWith1Voter);
       voting = _voting;
       voter1 = _voter1;
@@ -137,11 +152,11 @@ describe("Voting", function () {
         voting.target,
         2
       );
-      const length = parseInt(proposalsLength);
+      const currentIndex = parseInt(proposalsLength) - 1;
 
       await expect(
         voting.connect(voter1).addProposal("Proposal 1")
-      ).to.emit(voting, "ProposalRegistered").withArgs(length + 1);
+      ).to.emit(voting, "ProposalRegistered").withArgs(currentIndex + 1);
     })
 
     it("Should revert when add proposal in wrong state (Status != ProposalsRegistrationStarted)", async function () {
@@ -153,11 +168,103 @@ describe("Voting", function () {
     })
   })
 
-  // TODO: Set Vote
-  describe("Set Vote", function () {})
+  describe("Set Vote", function () {
+    let voting: Voting;
+    let voter1: any;
+    let voter2: any;
+
+    beforeEach(async function () {
+      const { voting: _voting, voter1: _voter1, account2 } = await loadFixture(deployVotingFixtureWith1Voter);
+      voting = _voting;
+      voter1 = _voter1;
+      voter2 = account2;
+
+      await voting.addVoter(voter2.address);
+      await voting.startProposalsRegistering();
+      await voting.connect(voter1).addProposal("Proposal 1");
+      await voting.endProposalsRegistering();
+      await voting.startVotingSession();
+    })
+
+    it("Should register a new vote", async function () {
+      await voting.connect(voter1).setVote(1);
+      const voter = await voting.connect(voter1).getVoter(voter1.address);
+      expect(voter.hasVoted).to.be.true;
+      expect(voter.votedProposalId).to.equal(1);
+    })
+
+    it("Should revert when voting twice", async function () {
+      await voting.connect(voter1).setVote(1);
+      await expect(
+        voting.connect(voter1).setVote(1)
+      ).to.be.revertedWith("You have already voted");
+    })
+    
+    it("Should revert when voting for invalid proposal", async function () {
+      await expect(
+        voting.connect(voter2).setVote(100)
+      ).to.be.revertedWith("Proposal not found");
+    })
+
+    it("Should revert when voting in wrong state (Status != VotingSessionStarted)", async function () {
+      await voting.endVotingSession();
+
+      await expect(
+        voting.connect(voter1).setVote(1)
+      ).to.be.revertedWith("Voting session havent started yet");
+    })
+
+    it("Should emit event: Voted", async function () {
+      const voteId = 1;
+      await expect(
+        voting.connect(voter1).setVote(voteId)
+      ).to.emit(voting, "Voted").withArgs(voter1.address, voteId);
+    })
+  })
 
   // TODO: Tally Votes
-  describe("Tally Votes", function () {})
+  describe("Tally Votes", function () {
+    let voting: Voting;
+    let owner: any;
+    let voter1: any;
+    let voter2: any;
+    let voter3: any;
+
+    beforeEach(async function () {
+      const { voting: _voting, owner: _owner, voter1: _voter1 , account2, account3 } = await loadFixture(deployVotingFixtureReadyToVote);
+      voting = _voting;
+      owner = _owner;
+      voter1 = _voter1;
+      voter2 = account2;
+      voter3 = account3;
+
+      await voting.connect(voter1).setVote(1);
+      await voting.connect(voter2).setVote(2);
+      await voting.connect(voter3).setVote(2);
+    })
+
+    it("Should tally votes", async function () {
+      await voting.endVotingSession();
+      await voting.tallyVotes();
+      const winningProposal = await voting.winningProposalID();
+      expect(winningProposal).to.equal(2);
+    })
+
+    it("Should revert when tallying votes in wrong state (Status != VotingSessionEnded)", async function () {
+      await expect(
+        voting.tallyVotes()
+      ).to.be.revertedWith("Current status is not voting session ended");
+    })
+
+    it("Should emit event: WorkflowStatusChange", async function () {
+      await voting.endVotingSession();
+      await expect(
+        voting.tallyVotes()
+      ).to.emit(voting, "WorkflowStatusChange").withArgs(4, 5); // 4 = VotingSessionEnded, 5 = VotesTallied
+    })
+
+    
+  })
 
   // TODO: Test all the workflow status transitions
   describe("Workflow Status", function () {})
@@ -167,7 +274,7 @@ describe("Voting", function () {
     let owner: any;
     let voter1: any;
 
-    before(async function () {
+    beforeEach(async function () {
       const { voting: _voting, owner: _owner, voter1: _voter1 } = await loadFixture(deployVotingFixtureWith1Voter);
       voting = _voting;
       owner = _owner;
