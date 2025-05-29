@@ -267,7 +267,12 @@ describe("Voting", function () {
   })
 
   // TODO: Test all the workflow status transitions
-  describe("Workflow Status", function () {})
+  describe("Workflow Status", function () {
+    // TODO: startProposalsRegistering
+    // TODO: endProposalsRegistering
+    // TODO: startVotingSession
+    // TODO: endVotingSession
+  })
 
   describe("Only voters", function () {
     let voting: Voting;
