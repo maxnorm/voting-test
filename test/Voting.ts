@@ -268,10 +268,128 @@ describe("Voting", function () {
 
   // TODO: Test all the workflow status transitions
   describe("Workflow Status", function () {
-    // TODO: startProposalsRegistering
+    let voting: Voting;
+    let owner: any;
+
+    beforeEach(async function () {
+      const { voting: _voting, owner: _owner} = await loadFixture(deployVotingFixture);
+      voting = _voting;
+      owner = _owner;
+
+      // Add owner as voter to access onlyVoters function
+      await voting.addVoter(owner.address);
+    })
+
+    describe("startProposalsRegistering", function () {
+      it("Should change status to ProposalsRegistrationStarted", async function () {
+        const currentStatus = Number(await voting.workflowStatus())
+
+        await voting.startProposalsRegistering();
+        expect(await voting.workflowStatus()).to.equal(currentStatus + 1);
+      })
+
+      it("Should revert when not in RegisteringVoters state", async function () {
+        await voting.startProposalsRegistering();
+        await expect(
+          voting.startProposalsRegistering()
+        ).to.be.revertedWith("Registering proposals cant be started now");
+      })
+
+      it("Should emit event: WorkflowStatusChange", async function () {
+        const currentStatus = Number(await voting.workflowStatus())
+        await expect(
+          voting.startProposalsRegistering()
+        ).to.emit(voting, "WorkflowStatusChange").withArgs(currentStatus, currentStatus + 1);
+      })
+
+      it("Should add GENESIS proposal", async function () {
+        await voting.startProposalsRegistering();
+        const proposal = await voting.getOneProposal(0);
+        expect(proposal.description).to.equal("GENESIS");
+      })
+    })
+
     // TODO: endProposalsRegistering
+    describe("endProposalsRegistering", function () {
+      beforeEach(async function () {
+        await voting.startProposalsRegistering();
+      })
+
+      it("Should change status to ProposalsRegistrationEnded", async function () {
+        const currentStatus = Number(await voting.workflowStatus())
+        await voting.endProposalsRegistering();
+        expect(await voting.workflowStatus()).to.equal(currentStatus + 1);
+      })
+
+      it("Should revert when not in ProposalsRegistrationStarted state", async function () {
+        await voting.endProposalsRegistering();
+        await expect(
+          voting.endProposalsRegistering()
+        ).to.be.revertedWith("Registering proposals havent started yet");
+      })
+
+      it("Should emit event: WorkflowStatusChange", async function () {
+        const currentStatus = Number(await voting.workflowStatus())
+        await expect(
+          voting.endProposalsRegistering()
+        ).to.emit(voting, "WorkflowStatusChange").withArgs(currentStatus, currentStatus + 1);
+      })
+    })
     // TODO: startVotingSession
-    // TODO: endVotingSession
+    describe("startVotingSession", function () {
+      beforeEach(async function () {
+        await voting.startProposalsRegistering();
+        await voting.endProposalsRegistering();
+      })
+
+      it("Should change status to VotingSessionStarted", async function () {
+        const currentStatus = Number(await voting.workflowStatus())
+        await voting.startVotingSession();
+        expect(await voting.workflowStatus()).to.equal(currentStatus + 1);
+      })
+
+      it("Should revert when not in ProposalsRegistrationEnded state", async function () {
+        await voting.startVotingSession();
+        await expect(
+          voting.startVotingSession()
+        ).to.be.revertedWith("Registering proposals phase is not finished");
+      })
+
+      it("Should emit event: WorkflowStatusChange", async function () {
+        const currentStatus = Number(await voting.workflowStatus())
+        await expect(
+          voting.startVotingSession()
+        ).to.emit(voting, "WorkflowStatusChange").withArgs(currentStatus, currentStatus + 1);
+      })
+    })
+
+    describe("endVotingSession", function () {
+      beforeEach(async function () {
+        await voting.startProposalsRegistering();
+        await voting.endProposalsRegistering();
+        await voting.startVotingSession();
+      })
+
+      it("Should change status to VotingSessionEnded", async function () {
+        const currentStatus = Number(await voting.workflowStatus())
+        await voting.endVotingSession();
+        expect(await voting.workflowStatus()).to.equal(currentStatus + 1);
+      })
+
+      it("Should revert when not in VotingSessionStarted state", async function () {
+        await voting.endVotingSession();
+        await expect(
+          voting.endVotingSession()
+        ).to.be.revertedWith("Voting session havent started yet");
+      })
+
+      it("Should emit event: WorkflowStatusChange", async function () {
+        const currentStatus = Number(await voting.workflowStatus())
+        await expect(
+          voting.endVotingSession()
+        ).to.emit(voting, "WorkflowStatusChange").withArgs(currentStatus, currentStatus + 1);
+      })
+    })
   })
 
   describe("Only voters", function () {
