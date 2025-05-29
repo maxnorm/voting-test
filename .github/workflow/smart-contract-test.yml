@@ -30,12 +30,4 @@ jobs:
 
       - name: Run Tests
         run: npx hardhat test
-
-      - name: Upload Coverage
-        uses: actions/upload-artifact@v3
-        with:
-          name: coverage
-          path: coverage/lcov.info
-          retention-days: 1
-        run: npx hardhat coverage
         
