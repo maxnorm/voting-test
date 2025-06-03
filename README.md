@@ -1,12 +1,14 @@
-# Sample Hardhat Project
+This project is an exercise in order to build a complete unit tests.
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.
+The code coverge is at 100%
+
+I tested each functions, possible revert, emit.
 
 Try running some of the following tasks:
-
 ```shell
 npx hardhat help
 npx hardhat test
+npx hardhat coverage
 REPORT_GAS=true npx hardhat test
 npx hardhat node
 npx hardhat ignition deploy ./ignition/modules/Lock.ts
